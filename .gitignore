@@ -1,0 +1,15 @@
+# Rust
+/target/
+target/
+**/target/
+
+# .NET
+[Bb]in/
+[Oo]bj/
+*.user
+
+# Misc
+/Decompiled/
+/dist/
+*.log
+*.vscode

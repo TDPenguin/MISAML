@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MISAML.Core/MISAML.Core.csproj" />
+  <Project Path="MISAML.Patcher/MISAML.Patcher.csproj" />
+</Solution>
