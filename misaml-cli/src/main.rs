@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 
-const MNEMONIMOV_APP_ID: u32 = 3_854_110;
+const MNEMONIMOV_APP_ID: u32 = 3854110;
 const BUILD_ID: &str = env!("CARGO_PKG_VERSION");
 
 macro_rules! debug_log {
