@@ -145,7 +145,7 @@ fn cmd_inspect_pck(path: Option<&String>) -> Result<()> {
         pck.header.godot_version.0,
         pck.header.godot_version.1,
         pck.header.godot_version.2,
-        pck.matched_profile,
+        pck.matched_profile.map_or("none", |profile| profile.name),
         pck.entries.len(),
     );
 
@@ -173,8 +173,8 @@ fn cmd_extract_pck(path: Option<&String>, out_dir: Option<&String>) -> Result<()
 
     let pck = misaml_pck::open(path)?;
     let key = pck
-        .matched_profile_ref()
-        .context("matched_profile has no corresponding Profile")?
+        .matched_profile
+        .context("PCK has no matching profile")?
         .eff_key();
 
     let mut ok = 0;
@@ -241,7 +241,7 @@ fn ensure_runtime(payload_dir: &Path) -> Result<()> {
     }
 
     log!("Runtime {RUNTIME_VERSION} ready!");
-    
+
     Ok(())
 }
 
