@@ -13,3 +13,5 @@ target/
 /dist/
 *.log
 *.vscode
+**/extracted/
+**/decompiled/
