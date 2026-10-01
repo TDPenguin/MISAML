@@ -33,9 +33,8 @@ enum InitState {
 static INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
 
 static REAL_INITIALIZE: OnceLock<CoreclrInitializeFn> = OnceLock::new();
+static REAL_OPEN64: OnceLock<Option<Open64Fn>> = OnceLock::new();
 static CORECLR_HANDLE: OnceLock<usize> = OnceLock::new();
-
-
 
 // only prints if MISAML_DEBUG is set, for debug
 macro_rules! debug_log {
@@ -106,12 +105,18 @@ pub unsafe extern "C" fn open64(
     pathname: *const c_char,
     flags: c_int,
 ) -> c_int {
-    let real_ptr = unsafe { ffi::resolve(libc::RTLD_NEXT, c"open64") };
-    if real_ptr.is_null() {
+    let Some(real) = REAL_OPEN64.get_or_init(|| {
+        let ptr = unsafe { ffi::resolve(libc::RTLD_NEXT, c"open64") };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(unsafe { std::mem::transmute::<*mut c_void, Open64Fn>(ptr) })
+        }
+    }) else {
         return -1;
-    }
-    let real: Open64Fn = unsafe { std::mem::transmute(real_ptr) };
-    unsafe { redirect::hook(pathname, flags, real) }
+    };
+
+    unsafe { redirect::hook(pathname, flags, *real) }
 }
 
 unsafe extern "C" fn hooked_initialize(
