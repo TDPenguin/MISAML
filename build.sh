@@ -23,13 +23,24 @@ compile() {
     [ -d "$CORE_PUBLISH" ] || { err "Missing: $CORE_PUBLISH"; exit 1; }
 }
 
+merge_dll() {
+    local ilrepack
+    ilrepack=$(find "$HOME/.nuget/packages/ilrepack" -name "ILRepack.exe" | sort -V | tail -1)
+    [ -n "$ilrepack" ] || { err "ILRepack.exe not found in NuGet cache, did 'dotnet add package ILRepack' run inside MISAML.Core?"; exit 1; }
+    
+    log "Merging 0Harmony.dll into MISAML.Core.dll..."
+    dotnet "$ilrepack" \
+        /target:library \
+        /out:dist/MISAML/MISAML.Core.dll \
+        "$CORE_PUBLISH/MISAML.Core.dll" \
+        "$CORE_PUBLISH/0Harmony.dll"
+}
+
 stage_binaries() {
     mkdir -p dist/MISAML
-
     cp "$CLI" dist/
     cp "$SHIM" dist/MISAML/
-    cp "$CORE_PUBLISH"/MISAML.Core.dll dist/MISAML/
-    cp "$CORE_PUBLISH"/0Harmony.dll dist/MISAML/
+    merge_dll
 }
 
 do_build() {
@@ -77,6 +88,11 @@ do_clean() {
     rm -rf MISAML.Core/bin MISAML.Core/obj
 }
 
+do_clean_runtime() {
+    log "Cleaning bundled .NET runtime..."
+    rm -rf dist/MISAML/runtime
+}
+
 do_clean_all() {
     do_clean
     rm -rf dist
@@ -87,19 +103,21 @@ usage() {
 Usage: ./build.sh <command>
 
 Commands:
-  build        Build Rust + MISAML.Core and stage dist/
-  rebuild      Rebuild and restage binaries
-  run          Launch ./dist/misaml-cli
-  clean        Remove code build artifacts (target/, bin/, obj/)
-  clean-all    Remove everything (clean + dist/)
+  build          Build Rust + MISAML.Core and stage dist/
+  rebuild        Rebuild and restage binaries
+  run            Launch ./dist/misaml-cli
+  clean          Remove code build artifacts (target/, bin/, obj/)
+  clean-runtime  Remove the bundled .NET runtime
+  clean-all      Remove everything (clean + dist/)
 EOF
 }
 
 case "${1:-}" in
-    build)   do_build ;;
-    rebuild) do_rebuild ;;
-    run)     do_run ;;
-    clean)   do_clean ;;
-    clean-all) do_clean_all ;;
-    *)       usage; exit 1 ;;
+    build)          do_build ;;
+    rebuild)        do_rebuild ;;
+    run)            do_run ;;
+    clean)          do_clean ;;
+    clean-runtime)  do_clean_runtime ;;
+    clean-all)      do_clean_all ;;
+    *)              usage; exit 1 ;;
 esac
