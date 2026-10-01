@@ -9,9 +9,20 @@ use anyhow::{anyhow, bail, Context, Result};
 const MNEMONIMOV_APP_ID: u32 = 3854110;
 const BUILD_ID: &str = env!("CARGO_PKG_VERSION");
 const RUNTIME_VERSION: &str = "8.0.30";
-#[cfg(windows)] const RUNTIME_PACKAGE: &str = "win-x64";
-#[cfg(not(windows))] const RUNTIME_PACKAGE: &str = "linux-x64";
-// hardcoded is perhaps not the best approach
+
+#[cfg(target_os = "windows")]
+mod platform {
+    pub const RUNTIME_PACKAGE: &str = "win-x64.zip";
+    pub const GAME_EXE: &str = "mnemonimov.exe";
+    pub const SHIM_NAME: &str = "libmisaml_shim.dll";
+}
+
+#[cfg(target_os = "linux")]
+mod platform {
+    pub const RUNTIME_PACKAGE: &str = "linux-x64.tar.gz";
+    pub const GAME_EXE: &str = "mnemonimov.x86_64";
+    pub const SHIM_NAME: &str = "libmisaml_shim.so";
+}
 
 macro_rules! debug_log {
     ($($arg:tt)*) => {
@@ -40,12 +51,11 @@ fn main() -> Result<()> {
 fn cmd_launch() -> Result<()> {
     let game_dir = find_game_dir()
         .context("could not find Mnemonimov, is it installed via Steam?")?;
+
     log!("Found Mnemonimov at: {}", game_dir.display());
 
-    let exe_path = game_dir.join("mnemonimov.x86_64");
-    if !exe_path.is_file() {
-        bail!("mnemonimov.x86_64 not found at {}", exe_path.display());
-    }
+    let exe_path = game_dir.join(platform::GAME_EXE);
+    require_exists(&exe_path, platform::GAME_EXE)?;
 
     let misaml_dir = own_install_dir()
         .context("could not find misaml-cli directory")?;
@@ -53,7 +63,7 @@ fn cmd_launch() -> Result<()> {
 
     ensure_runtime(&payload_dir)?;
 
-    let shim_path = payload_dir.join("libmisaml_shim.so");
+    let shim_path = payload_dir.join(platform::SHIM_NAME);
     let framework_dir = find_framework_dir(&payload_dir)
         .context("could not find bundled .NET runtime")?;
 
@@ -72,20 +82,19 @@ fn cmd_launch() -> Result<()> {
         .env("MISAML_FRAMEWORK_DIR", &framework_dir)
         .exec();
 
-    Err(anyhow!(err).context(format!("failed to launch {}", exe_path.display())))
+    Err(anyhow!(err).context(format!(
+        "failed to launch {}", 
+        exe_path.display()
+    )))
 }
 
 fn find_game_dir() -> Result<PathBuf> {
-    let steam_dir = steamlocate::SteamDir::locate()
+    let steam = steamlocate::SteamDir::locate()
         .context("could not locate Steam")?;
 
-    let (app, library) = steam_dir
-        .find_app(MNEMONIMOV_APP_ID)?
-        .ok_or_else(|| {
-            anyhow!(
-                "Mnemonimov (app id {MNEMONIMOV_APP_ID}) is not installed"
-            )
-        })?;
+    let Some((app, library)) = steam.find_app(MNEMONIMOV_APP_ID)? else {
+        bail!("Mnemonimov (app id {MNEMONIMOV_APP_ID}) is not installed!");
+    };
 
     Ok(library.resolve_app_dir(&app))
 }
@@ -105,9 +114,9 @@ fn find_framework_dir(root: &Path) -> Result<PathBuf> {
         .map(|entry| entry.path())
         .filter(|path| path.is_dir());
 
-    let version = versions
-        .next()
-        .ok_or_else(|| anyhow!("no .NET runtime found in {}", root.display()))?;
+    let Some(version) = versions.next() else {
+        bail!("no .NET runtime found in {}", root.display());
+    };
 
     if versions.next().is_some() {
         bail!("multiple .NET runtimes found in {}", root.display());
@@ -117,15 +126,18 @@ fn find_framework_dir(root: &Path) -> Result<PathBuf> {
 }
 
 fn require_exists(path: &Path, name: &str) -> Result<()> {
-    if !path.exists() {
-        bail!("{} not found at {}", name, path.display());
+    if path.exists() {
+        return Ok(());
     }
 
-    Ok(())
+    bail!("{name} not found at {}", path.display());
 }
 
 fn cmd_inspect_pck(path: Option<&String>) -> Result<()> {
-    let path = path.ok_or_else(|| anyhow!("usage: misaml-cli inspect-pck <path-to.pck>"))?;
+    let Some(path) = path else {
+        bail!("usage: misaml-cli inspect-pck <path-to.pck>");
+    };
+
     let pck = misaml_pck::open(path)?;
 
     log!(
@@ -136,35 +148,59 @@ fn cmd_inspect_pck(path: Option<&String>) -> Result<()> {
         pck.matched_profile,
         pck.entries.len(),
     );
+
     for entry in &pck.entries {
-        println!("{:#010x} {:8} flags={:#x} {}", entry.abs_off, entry.size, entry.flags, entry.path);
+        println!(
+            "{:#010x} {:8} flags={:#x} {}",
+            entry.abs_off,
+            entry.size,
+            entry.flags,
+            entry.path,
+        );
     }
+
     Ok(())
 }
 
 fn cmd_extract_pck(path: Option<&String>, out_dir: Option<&String>) -> Result<()> {
-    let path = path.ok_or_else(|| anyhow!("usage: misaml-cli extract-pck <path-to.pck> [out_dir]"))?;
-    let out_dir = PathBuf::from(out_dir.map(String::as_str).unwrap_or("extracted"));
+    let Some(path) = path else {
+        bail!("usage: misaml-cli extract-pck <path-to.pck> [out_dir]");
+    };
+
+    let out_dir = PathBuf::from(
+        out_dir.map(String::as_str).unwrap_or("extracted")
+    );
 
     let pck = misaml_pck::open(path)?;
-    let profile = pck.matched_profile_ref()
-        .context("matched_profile has no corresponding Profile")?;
-    let key = profile.eff_key();
+    let key = pck
+        .matched_profile_ref()
+        .context("matched_profile has no corresponding Profile")?
+        .eff_key();
 
     let mut ok = 0;
     let mut failed = 0;
     
     for entry in &pck.entries {
         let out_path = out_dir.join(&entry.path);
+
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+
         match misaml_pck::extract(Path::new(path), entry, &key) {
-            Ok(data) => { std::fs::write(&out_path, data)?; ok += 1; }
-            Err(e) => { eprintln!("failed to extract {}: {e}", entry.path); failed += 1; }
+            Ok(data) => {
+                std::fs::write(out_path, data)?;
+                ok += 1;
+            }
+            Err(e) => {
+                eprintln!("failed to extract {}: {e}", entry.path);
+                failed += 1;
+            }
         }
     }
+
     log!("Extracted {ok} files, {failed} failed.");
+
     Ok(())
 }
 
@@ -185,7 +221,8 @@ fn ensure_runtime(payload_dir: &Path) -> Result<()> {
         .context("could not create runtime directory")?;
 
     let url = format!(
-        "https://builds.dotnet.microsoft.com/dotnet/Runtime/{RUNTIME_VERSION}/dotnet-runtime-{RUNTIME_VERSION}-{RUNTIME_PACKAGE}"
+        "https://builds.dotnet.microsoft.com/dotnet/Runtime/{RUNTIME_VERSION}/dotnet-runtime-{RUNTIME_VERSION}-{}",
+        platform::RUNTIME_PACKAGE
     );
 
     log!("Downloading from {url}...");
@@ -193,12 +230,8 @@ fn ensure_runtime(payload_dir: &Path) -> Result<()> {
     let mut response = ureq::get(&url)
         .call()
         .with_context(|| format!("failed to download .NET runtime from {url}"))?;
-
-    tar::Archive::new(flate2::read::GzDecoder::new(
-        response.body_mut().as_reader(),
-    ))
-    .unpack(&runtime_dir)
-    .context("failed to extract .NET runtime archive")?;
+    
+    extract_runtime_archive(response.body_mut().as_reader(), &runtime_dir)?;
 
     if !marker.is_dir() {
         bail!(
@@ -208,5 +241,28 @@ fn ensure_runtime(payload_dir: &Path) -> Result<()> {
     }
 
     log!("Runtime {RUNTIME_VERSION} ready!");
+    
+    Ok(())
+}
+
+fn extract_runtime_archive(reader: impl std::io::Read, runtime_dir: &Path) -> Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data)?;
+
+        zip::ZipArchive::new(std::io::Cursor::new(data))
+            .context("failed to open .NET runtime zip archive")?
+            .extract(runtime_dir)
+            .context("failed to extract .NET runtime zip archive")?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        tar::Archive::new(flate2::read::GzDecoder::new(reader))
+            .unpack(runtime_dir)
+            .context("failed to extract .NET runtime tar.gz archive")?;
+    }
+
     Ok(())
 }

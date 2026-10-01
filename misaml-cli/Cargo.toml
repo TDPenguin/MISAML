@@ -1,6 +1,6 @@
 [package]
 name = "misaml-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
@@ -13,3 +13,4 @@ serde_json = "1.0.151"
 steamlocate = "2.1.1"
 tar = "0.4.46"
 ureq = "3.4.2"
+zip = "8.6.0"
