@@ -9,71 +9,57 @@ SHIM="target/release/libmisaml_shim.so"
 CLI="target/release/misaml-cli"
 CORE_PUBLISH="MISAML.Core/bin/Release/net8.0/publish"
 
-RUNTIME_VERSION="8.0.30"
-RUNTIME_URL="https://builds.dotnet.microsoft.com/dotnet/Runtime/${RUNTIME_VERSION}/dotnet-runtime-${RUNTIME_VERSION}-linux-x64.tar.gz"
-
-do_build() {
+compile() {
     log "Building Rust..."
     cargo build --release
 
     log "Publishing MISAML.Core..."
     (cd MISAML.Core && dotnet publish -c Release)
 
-    log "Staging dist..."
-    rm -rf dist
-    mkdir -p dist/core
-
     for f in "$SHIM" "$CLI"; do
         [ -f "$f" ] || { err "Missing: $f"; exit 1; }
     done
 
-    [ -d "$CORE_PUBLISH" ] || {
-        err "Missing: $CORE_PUBLISH"
-        exit 1
-    }
+    [ -d "$CORE_PUBLISH" ] || { err "Missing: $CORE_PUBLISH"; exit 1; }
+}
 
-    log "Downloading .NET runtime ${RUNTIME_VERSION}..."
-    curl -fL "$RUNTIME_URL" | tar -xz -C dist/core
+stage_binaries() {
+    mkdir -p dist/MISAML
 
-    cp "$SHIM" dist/
     cp "$CLI" dist/
+    cp "$SHIM" dist/MISAML/
+    cp "$CORE_PUBLISH"/MISAML.Core.dll dist/MISAML/
+    cp "$CORE_PUBLISH"/0Harmony.dll dist/MISAML/
+}
 
-    cp "$CORE_PUBLISH"/*.dll dist/
+do_build() {
+    compile
 
-    log "dist/ ready, run: ./dist/misaml-cli"
+    log "Staging dist..."
+    rm -rf dist
+    stage_binaries
+
+    log "dist/ ready:"
+    find dist -maxdepth 4 | sort
+
+    log "Run with: ./dist/misaml-cli"
 }
 
 do_rebuild() {
-    log "Rebuilding Rust..."
-    cargo build --release
-
-    log "Publishing MISAML.Core..."
-    (cd MISAML.Core && dotnet publish -c Release)
-
-    [ -d "dist/core" ] || {
-        err "dist/core does not exist. Run './build.sh build' first."
+    [ -d "dist" ] || {
+        err "dist/ not found. Run './build.sh build' first."
         exit 1
     }
 
-    for f in "$SHIM" "$CLI"; do
-        [ -f "$f" ] || { err "Missing: $f"; exit 1; }
-    done
+    compile
 
-    [ -d "$CORE_PUBLISH" ] || {
-        err "Missing: $CORE_PUBLISH"
-        exit 1
-    }
+    log "Restaging binaries..."
+    stage_binaries
 
-    log "Updating dist/ without reinstalling .NET runtime..."
+    log "Rebuild complete:"
+    find dist -maxdepth 4 | sort
 
-    cp "$SHIM" dist/
-    cp "$CLI" dist/
-
-    find dist -maxdepth 1 -type f -name '*.dll' -delete
-
-    cp "$CORE_PUBLISH"/*.dll dist/
-
-    log "Rebuild complete, run: ./dist/misaml-cli"
+    log "Run with: ./dist/misaml-cli"
 }
 
 do_run() {
@@ -86,21 +72,14 @@ do_run() {
 }
 
 do_clean() {
-    log "Cleaning build artifacts..."
+    log "Cleaning code build artifacts..."
     cargo clean
-    rm -rf \
-        MISAML.Core/bin \
-        MISAML.Core/obj
-}
-
-do_clean_dist() {
-    log "Cleaning dist..."
-    rm -rf dist
+    rm -rf MISAML.Core/bin MISAML.Core/obj
 }
 
 do_clean_all() {
     do_clean
-    do_clean_dist
+    rm -rf dist
 }
 
 usage() {
@@ -108,21 +87,19 @@ usage() {
 Usage: ./build.sh <command>
 
 Commands:
-  build        Build everything and stage dist/
-  rebuild      Rebuild Rust/Core without reinstalling .NET runtime
+  build        Build Rust + MISAML.Core and stage dist/
+  rebuild      Rebuild and restage binaries
   run          Launch ./dist/misaml-cli
-  clean        Remove build artifacts
-  clean-dist   Remove dist/
-  clean-all    Remove all build artifacts
+  clean        Remove code build artifacts (target/, bin/, obj/)
+  clean-all    Remove everything (clean + dist/)
 EOF
 }
 
 case "${1:-}" in
-    build)      do_build ;;
-    rebuild)    do_rebuild ;;
-    run)        do_run ;;
-    clean)      do_clean ;;
-    clean-dist) do_clean_dist ;;
-    clean-all)  do_clean_all ;;
-    *)          usage; exit 1 ;;
+    build)   do_build ;;
+    rebuild) do_rebuild ;;
+    run)     do_run ;;
+    clean)   do_clean ;;
+    clean-all) do_clean_all ;;
+    *)       usage; exit 1 ;;
 esac
