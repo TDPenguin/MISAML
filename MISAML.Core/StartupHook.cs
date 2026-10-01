@@ -102,7 +102,7 @@ public static class StartupHook
     {
         if (!SyscallHandlers.TryAdd(id, handler))
         {
-            Log($"Syscall id {id} already registered — refusing duplicate.");
+            Log($"Syscall id {id} already registered, refusing duplicate.");
         }
     }
 }
