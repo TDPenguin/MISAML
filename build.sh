@@ -47,7 +47,8 @@ do_build() {
     compile
 
     log "Staging dist..."
-    rm -rf dist
+    mkdir -p dist/MISAML
+    rm -f dist/misaml-cli dist/MISAML/libmisaml_shim.so dist/MISAML/MISAML.Core.dll
     stage_binaries
 
     log "dist/ ready:"
