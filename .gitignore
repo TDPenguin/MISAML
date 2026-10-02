@@ -9,9 +9,16 @@ target/
 *.user
 
 # Misc
-/Decompiled/
-/dist/
+**/[Dd]ecompiled/
+**/[Ee]xtracted/
+**/dist/
 *.log
 *.vscode
-**/extracted/
-**/decompiled/
+**.bak
+**.cpp
+**.gdc
+**/[Nn]otes/
+godot-*/
+
+# BYO GodotSharp.dll, please! (it's in the game directory, too)
+MISAML.Core/vendor/GodotSharp.dll 
