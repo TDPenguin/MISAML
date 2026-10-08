@@ -52,7 +52,9 @@ public static class StartupHook
             // bootstrap patch, ALWAYS runs regardless of debug mode!! this is what
             // lets Loader grab a live GodotObject later, not optional!!
             if (loadedName == "Mnemonimov")
+            {
                 GodotBridgePatch.TryPatch(Hooks.Harmony, assembly);
+            }
 
             // anything past here is just catalog stuff!!!!
             if (!DebugEnabled) return;
@@ -117,6 +119,7 @@ public static class Hooks
     private static readonly ConcurrentDictionary<
         string, /* name used for the override. the key. */
         Func<
+            object?, /* instance */
             object?[], /* args passed to the hook, array. */
             HookResult /* value returned by the hook. */
         >
@@ -131,7 +134,7 @@ public static class Hooks
     // handler gets the call's args (Harmony's __args) and returns
     // either HookResult.Continue() or HookResult.Replace(value)
     // to skip the original (value is ignored for void methods).
-    public static void Register(string typeName, string methodName, Func<object?[], HookResult> handler)
+    public static void Register(string typeName, string methodName, Func<object?, object?[], HookResult> handler)
     {
         var key = Key(typeName, methodName);
 
@@ -203,18 +206,30 @@ public static class Hooks
     }
 
     // applies a Harmony prefix to the target method.
+    // one of 4 methods are used for instance patching support.
     private static void ApplyPatch(MethodInfo method, string key)
     {
         try
         {
-            // void vs non-void needs different prefix signatures a by-ref
-            // return (ref int etc.) still fails here either way
-            var prefixName = method.ReturnType == typeof(void) ?
-                nameof(GenericPrefixVoid) : nameof(GenericPrefixResult);
+            // check for void return & static
+            bool isVoid = method.ReturnType == typeof(void);
+            bool isStatic = method.IsStatic;
 
+            // pick the matching prefix based on return type & whether it's static
+            var prefixName = (isVoid, isStatic) switch
+            {
+                (true, true) => nameof(GenericPrefixVoidStatic),
+                (true, false) => nameof(GenericPrefixVoidInstance),
+                (false, true) => nameof(GenericPrefixResultStatic),
+                (false, false) => nameof(GenericPrefixResultInstance),
+            };
+
+            // get prefix method
             var prefix = new HarmonyMethod(
-                typeof(Hooks).GetMethod(prefixName, BindingFlags.NonPublic | BindingFlags.Static));
-            
+                typeof(Hooks).GetMethod(prefixName, BindingFlags.NonPublic | BindingFlags.Static)
+            );
+
+            // patch the target
             Harmony.Patch(method, prefix: prefix);
 
             // mark the target only after Harmony successfully patches/patched it.
@@ -228,45 +243,63 @@ public static class Hooks
         }
     }
 
-    // remember, SkipOriginal is for fully replacing the original method, if true
-
-    // Harmony prefix for methods that return void.
-    // returns true to run the original method, false to skip it.
-    private static bool GenericPrefixVoid(MethodBase __originalMethod, object[] __args)
+    // prefix for void instance methods.
+    private static bool GenericPrefixVoidInstance(MethodBase __originalMethod, object __instance, object[] __args)
     {
         // try to find the handler registered for this method.
         // if there is no handler, run the original method.
-        //
-        // out gives extra return from function, an extra result
         if (!TryGetHandler(__originalMethod, out var handler)) return true;
 
-        // call the registered handler with the original method's arguments.
-        // InvokeSafely returns a HookResult that details what to do.
-        var result = InvokeSafely(handler!, __args, __originalMethod);
+        // call the registered handler with the instance & arguments.
+        var result = InvokeSafely(handler!, __instance, __args, __originalMethod);
 
         // if SkipOriginal is true, prevent the original method from running.
-        // if false, let the original method continue normally.
         return !result.SkipOriginal;
     }
-    
-    // runs a prefix for methods that return a value.
-    //
-    // unlike GenericPrefixVoid, this also receives __result.
-    // __result is a reference to the original method's return value,
-    // so changing it changes what the method returns.
-    //
-    // ref passes directly to the original value instead of making a copy, sorta.
-    private static bool GenericPrefixResult(MethodBase __originalMethod, object[] __args, ref object __result)
+
+    // prefix for void static methods.
+    private static bool GenericPrefixVoidStatic(MethodBase __originalMethod, object[] __args)
     {
         // try to find the handler registered for this method.
         // if there is no handler, run the original method.
         if (!TryGetHandler(__originalMethod, out var handler)) return true;
 
-        // if SkipOriginal is true, use the Value stored inside result
-        // as the original method's return value.
-        var result = InvokeSafely(handler!, __args, __originalMethod);
-        
-        // if SkipOriginal true, we set to Value *inside* result.
+        // static methods have no instance, so pass null.
+        var result = InvokeSafely(handler!, null, __args, __originalMethod);
+
+        // if SkipOriginal is true, prevent the original method from running.
+        return !result.SkipOriginal;
+    }
+
+    // prefix for instance methods that return a value.
+    private static bool GenericPrefixResultInstance(MethodBase __originalMethod, object __instance, object[] __args, ref object __result)
+    {
+        // try to find the handler registered for this method.
+        // if there is no handler, run the original method.
+        if (!TryGetHandler(__originalMethod, out var handler)) return true;
+
+        // call the registered handler with the instance & arguments.
+        var result = InvokeSafely(handler!, __instance, __args, __originalMethod);
+
+        // if SkipOriginal is true, use Value as the method's return value.
+        if (result.SkipOriginal) __result = result.Value!;
+
+        // true = run the original method.
+        // false = skip the original method.
+        return !result.SkipOriginal;
+    }
+
+    // prefix for static methods that return a value.
+    private static bool GenericPrefixResultStatic(MethodBase __originalMethod, object[] __args, ref object __result)
+    {
+        // try to find the handler registered for this method.
+        // if there is no handler, run the original method.
+        if (!TryGetHandler(__originalMethod, out var handler)) return true;
+
+        // static methods have no instance, so pass null.
+        var result = InvokeSafely(handler!, null, __args, __originalMethod);
+
+        // if SkipOriginal is true, use Value as the method's return value.
         if (result.SkipOriginal) __result = result.Value!;
 
         // true = run the original method.
@@ -276,7 +309,7 @@ public static class Hooks
 
     // finds the handler registered for the original method.
     // out gives us the handler as an extra result from the function.
-    private static bool TryGetHandler(MethodBase original, out Func<object?[], HookResult>? handler)
+    private static bool TryGetHandler(MethodBase original, out Func<object?, object?[], HookResult>? handler)
     {
         // make the same key that was used when the handler was registered.
         var key = Key(original.DeclaringType?.FullName ?? "", original.Name);
@@ -285,14 +318,19 @@ public static class Hooks
         return Overrides.TryGetValue(key, out handler);
     }
 
-    // calls a registered handler and safely handles errors.
+    // calls a registered handler and catches any errors.
     // if the handler throws, continue with the original method instead.
-    private static HookResult InvokeSafely(Func<object?[], HookResult> handler, object[] args, MethodBase original)
+    private static HookResult InvokeSafely(
+        Func<object?, object?[], HookResult> handler,
+        object? instance, 
+        object[] args, 
+        MethodBase original
+    )
     {
         try
         {   
-            // call the handler with the original method's args
-            return handler(args);
+            // call the handler with the original method's args and instance
+            return handler(instance, args);
         }
         catch (Exception e)
         {
