@@ -65,7 +65,7 @@ public static class Hooks
             var method = FindMethod(typeName, methodName);
             if (method != null)
             {
-                ApplyPatch(method, key);    
+                ApplyPatch(method, key);
                 return;
             }
         }
@@ -229,13 +229,13 @@ public static class Hooks
     // if the handler throws, continue with the original method instead.
     private static HookResult InvokeSafely(
         Func<object?, object?[], HookResult> handler,
-        object? instance, 
-        object[] args, 
+        object? instance,
+        object[] args,
         MethodBase original
     )
     {
         try
-        {   
+        {
             // call the handler with the original method's args and instance
             return handler(instance, args);
         }

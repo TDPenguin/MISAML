@@ -17,7 +17,7 @@ public static class GodotApi
     internal static void Bootstrap(GodotObject anyBridgeInstance)
     {
         if (_sceneTree != null) return; // only need to do this once, ever
- 
+
         try
         {
             _sceneTree = (SceneTree)Engine.GetMainLoop();
@@ -57,7 +57,7 @@ public static class GodotApi
             if (node.GetType().Name == typeName)
                 return node;
 
-            foreach (Node child in node.GetChildren()) 
+            foreach (Node child in node.GetChildren())
                 queue.Enqueue(child);
         }
 
@@ -67,23 +67,23 @@ public static class GodotApi
     // add more shit later
 
     public static Color MakeColor(string hex) => new(hex);
- 
+
     public static GodotObject Instantiate(string className)
     {
         var variant = ClassDB.Instantiate(className);
         return variant.AsGodotObject()
             ?? throw new Exception($"ClassDB.Instantiate({className}) returned null/non-object!");
     }
- 
+
     public static void Set<T>(GodotObject instance, string propertyName, T value) where T : notnull
         => instance.Set(propertyName, Variant.From(value));
- 
+
     public static Variant Get(GodotObject instance, string propertyName)
         => instance.Get(propertyName);
- 
+
     public static Variant Call(GodotObject instance, string methodName, params Variant[] args)
         => instance.Call(methodName, args);
- 
+
     public static void AddChildDeferred(Node parent, Node child)
         => parent.CallDeferred("add_child", child);
 }
@@ -114,7 +114,7 @@ internal static class Logger
         Path.GetDirectoryName(typeof(Logger).Assembly.Location)!,
         "misaml.log"
     );
- 
+
     private static readonly Stopwatch Stopwatch = Stopwatch.StartNew();
 
     public static void Write(string @class, string message)

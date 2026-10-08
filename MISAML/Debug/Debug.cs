@@ -123,7 +123,7 @@ internal static class Search
 
     public static SearchResult Run(
         Harmony harmony, IEnumerable<Type?> types, string label
-        // enumerable because it's an array!
+    // enumerable because it's an array!
     )
     {
         // maybe can just be ToArray()!,.,,??? i think... eepy..
@@ -190,8 +190,8 @@ internal static class Search
 
     // the probe, patch, log, unpatched loop, shared by Run and RunMethods.
     private static void ProbeAll(
-        Harmony harmony, 
-        IEnumerable<(Type type, MethodInfo method)> methods, 
+        Harmony harmony,
+        IEnumerable<(Type type, MethodInfo method)> methods,
         string label,
         ref int ok,
         ref int skipped,
@@ -302,7 +302,7 @@ internal static class Search
         if (specialNameTag != null)
             tags.Add(specialNameTag);
 
-        if ((method.GetMethodImplementationFlags() & 
+        if ((method.GetMethodImplementationFlags() &
                 MethodImplAttributes.AggressiveInlining) != 0)
         {
             tags.Add("agressive-inlining");
@@ -310,7 +310,7 @@ internal static class Search
 
         var tagString = string.Join(",", tags);
 
-        var parameters = string.Join(", ", 
+        var parameters = string.Join(", ",
             method.GetParameters()
                 .Select(p => $"{p.ParameterType.Name} {p.Name}"));
 

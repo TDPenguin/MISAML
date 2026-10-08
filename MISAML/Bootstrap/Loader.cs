@@ -61,7 +61,7 @@ public static class Loader
         Path.GetDirectoryName(typeof(Loader).Assembly.Location)!,
         "misaml.log"
     );
-    
+
     private static void Log(string message)
     {
         var line = $"{Stopwatch.Elapsed.TotalSeconds:F6} [MISAML.Bootstrap] {message}";
@@ -84,7 +84,7 @@ public static class Loader
         File.WriteAllText(LogPath, ""); // clear log
 
         Log("Starting, waiting for Mnemonimov...");
-    
+
         // run this function whenever a new assembly is loaded into the AppDomain
         //
         // add the function to the AssemblyLoad event so it runs automatically
@@ -148,7 +148,7 @@ public static class Loader
             // on the same MethodInfo
             _relayMethod = apiHostType.GetMethod("OnInstanceRelayed", BindingFlags.Public | BindingFlags.Static)
                 ?? throw new Exception("GodotAPIHost.OnInstanceRelayed not found");
-            
+
             Log("isolated context GodotAPIHost ready!");
 
             // Setup the relay, every time a bridge method fires in the Default
@@ -170,7 +170,7 @@ public static class Loader
         }
         catch (Exception e)
         {
-            Log("[MISAML.Bootstrap] relay invoke failed: " + e);   
+            Log("[MISAML.Bootstrap] relay invoke failed: " + e);
         }
     }
 

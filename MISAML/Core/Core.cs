@@ -10,7 +10,7 @@ namespace MISAML.Core;
 // Purpose: always hook GodotBridgePatch when Mnemonimov loads (bootstrap),
 // and if MISAML_DEBUG=1, run the MISAML.Debug methods.
 public static class StartupHook
-{   
+{
     // path for log file
     private static readonly string LogPath = Path.Combine(
         Path.GetDirectoryName(typeof(StartupHook).Assembly.Location)!, /* null forgiving, location can be null */
@@ -21,7 +21,7 @@ public static class StartupHook
     private static readonly System.Diagnostics.Stopwatch Stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
     // just check env for debug logging
-    internal static readonly bool DebugEnabled 
+    internal static readonly bool DebugEnabled
         = Environment.GetEnvironmentVariable("MISAML_DEBUG") != null;
 
     internal static void Log(string @class, string message)
@@ -72,7 +72,7 @@ public static class StartupHook
                     break;
             }
         }
- 
+
         // subscribe FIRST so nothing loading from this point onwards can slip
         // through the gap between  "check what's loaded" and "start listening"
         AppDomain.CurrentDomain.AssemblyLoad += (sender, args) =>
@@ -84,7 +84,7 @@ public static class StartupHook
         // and finished before we could listen for it, and it never loaded
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             HandleAssembly(assembly);
- 
+
         Log(nameof(StartupHook), "MISAML.Core startup complete.");
     }
 
