@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Reflection;
 using System.Linq;
 using HarmonyLib;
-using System.ComponentModel;
-using System.Net;
 using System.Runtime.CompilerServices;
-using System.Reflection.Metadata;
+
+using MISAML.structs;
 
 namespace MISAML.Debug;
 
@@ -30,14 +30,6 @@ internal static class Log
         File.AppendAllText(LogPath, l + "\n");
     }
 }
-
-// struct for results of search, readonly means immutable, record means data focused!
-public readonly record struct SearchResult(
-    int TypesScanned, 
-    int Patchable, 
-    int Skipped, 
-    int Failed
-);
 
 // shared by bridge/asm/mnemonimov/godotsharp!!! the reflection + probe then unpatch
 // logic is here! each method is patched just long enough so harmony can see if it
@@ -167,7 +159,13 @@ internal static class Search
 
         ProbeAll(harmony, AllMethods(), label, ref ok, ref skipped, ref failed);
 
-        return new SearchResult(typesScanned, ok, skipped, failed);
+        return new SearchResult
+        {
+            TypesScanned = typesScanned,
+            Patchable = ok,
+            Skipped = skipped,
+            Failed = failed
+        };
     }
 
     // same thing as Run(types), but for an exact, already known set
@@ -180,7 +178,13 @@ internal static class Search
 
         ProbeAll(harmony, methodList.Select(m => (m.DeclaringType!, m)), label, ref ok, ref skipped, ref failed);
 
-        return new SearchResult(methodList.Length, ok, skipped, failed);
+        return new SearchResult
+        {
+            TypesScanned = methodList.Length,
+            Patchable = ok,
+            Skipped = skipped,
+            Failed = failed
+        };
     }
 
     // the probe, patch, log, unpatched loop, shared by Run and RunMethods.
@@ -388,14 +392,18 @@ public static class Mnemonimov
 // not entirely needed and very large. Docs on this will be limited.
 public static class GodotSharp
 {
-    // Found via: monodis --output=X.il <dll>, then
-    //   rg -o '\[GodotSharp\][\w.]+::\w+' mnemonimov.il asm.il --no-filename | sort -u
-    // against the live Mnemonimov.dll/Asm.dll. Redo this after a game
-    // update, same idea as Bridge.TypeNames. 6 of the 26 raw matches
-    // are already in Search's SkipNames (Godot's own interop overrides,
-    // always InvalidProgramException) and are dropped from this list, however
-    // they can still be included.
-    private static readonly (string typeName, string methodName)[] UsedMethods =
+    /*
+     Found via: monodis --output=X.il <dll>, then
+       rg -o '\[GodotSharp\][\w.]+::\w+' mnemonimov.il asm.il --no-filename | sort -u
+     against the live Mnemonimov.dll/Asm.dll. Redo this after a game
+     update, same idea as Bridge.TypeNames. 6 of the 26 raw matches
+     are already in Search's SkipNames (Godot's own interop overrides,
+     always InvalidProgramException) and are dropped from this list, however
+     they can still be included.
+     
+     enforced readonly by making it ImmutableArray
+    */
+    private static readonly ImmutableArray<(string TypeName, string MethodName)> UsedMethods =
     [
         ("Godot.Bridge.GodotSerializationInfo", "AddProperty"),
         ("Godot.Bridge.GodotSerializationInfo", "TryGetProperty"),

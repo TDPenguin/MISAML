@@ -13,7 +13,12 @@
     <Compile Remove="GodotAPI/**/bin/**/*.cs" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Bootstrap/**;GodotAPI/**</DefaultItemExcludes>
+  </PropertyGroup>
+
   <ItemGroup>
+    <PackageReference Include="GodotSharp" Version="4.5.1" />
     <PackageReference Include="ILRepack" Version="2.0.48">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

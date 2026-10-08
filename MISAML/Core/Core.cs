@@ -4,8 +4,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Godot;
 using HarmonyLib;
+
+using MISAML.structs;
 
 namespace MISAML.Core;
 
@@ -21,15 +22,15 @@ public static class StartupHook
     );
 
     // one timer for the entire MISAML.Core/StartupHook thingy
-    private static readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    private static readonly System.Diagnostics.Stopwatch Stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
     // just check env for debug logging
     internal static readonly bool DebugEnabled 
-        = System.Environment.GetEnvironmentVariable("MISAML_DEBUG") != null;
+        = Environment.GetEnvironmentVariable("MISAML_DEBUG") != null;
 
     internal static void Log(string @class, string message)
     {
-        var line = $"{_stopwatch.Elapsed.TotalSeconds:F6} [MISAML.Core.{@class}] {message}";
+        var line = $"{Stopwatch.Elapsed.TotalSeconds:F6} [MISAML.Core.{@class}] {message}";
         File.AppendAllText(LogPath, line + "\n");
     }
 
@@ -92,7 +93,7 @@ public static class StartupHook
     }
 
     //TODO: Add individual timestamping for each method ran in MISAML.Debug
-    private static void RunSearch(string label, MISAML.Debug.SearchResult result)
+    private static void RunSearch(string label, SearchResult result)
     {
         Log(
             label,
@@ -138,10 +139,13 @@ public static class Hooks
     {
         var key = Key(typeName, methodName);
 
-        if (!Overrides.TryAdd(key, handler))
+        lock (PatchLock)
         {
-            Log($"{key} already has a registered override, refusing duplicate.");
-            return;
+            if (!Overrides.TryAdd(key, handler))
+            {
+                Log($"{key} already has a registered override, refusing duplicate.");
+                return;
+            }
         }
 
         EnsurePatched(typeName, methodName, key);
@@ -244,67 +248,67 @@ public static class Hooks
     }
 
     // prefix for void instance methods.
-    private static bool GenericPrefixVoidInstance(MethodBase __originalMethod, object __instance, object[] __args)
+    private static bool GenericPrefixVoidInstance(MethodBase originalMethod, object instance, object[] args)
     {
         // try to find the handler registered for this method.
         // if there is no handler, run the original method.
-        if (!TryGetHandler(__originalMethod, out var handler)) return true;
+        if (!TryGetHandler(originalMethod, out var handler)) return true;
 
         // call the registered handler with the instance & arguments.
-        var result = InvokeSafely(handler!, __instance, __args, __originalMethod);
+        var result = InvokeSafely(handler!, instance, args, originalMethod);
 
         // if SkipOriginal is true, prevent the original method from running.
         return !result.SkipOriginal;
     }
 
     // prefix for void static methods.
-    private static bool GenericPrefixVoidStatic(MethodBase __originalMethod, object[] __args)
+    private static bool GenericPrefixVoidStatic(MethodBase originalMethod, object[] args)
     {
         // try to find the handler registered for this method.
         // if there is no handler, run the original method.
-        if (!TryGetHandler(__originalMethod, out var handler)) return true;
+        if (!TryGetHandler(originalMethod, out var handler)) return true;
 
         // static methods have no instance, so pass null.
-        var result = InvokeSafely(handler!, null, __args, __originalMethod);
+        var result = InvokeSafely(handler!, null, args, originalMethod);
 
         // if SkipOriginal is true, prevent the original method from running.
         return !result.SkipOriginal;
     }
 
     // prefix for instance methods that return a value.
-    private static bool GenericPrefixResultInstance(MethodBase __originalMethod, object __instance, object[] __args, ref object __result)
+    private static bool GenericPrefixResultInstance(MethodBase originalMethod, object instance, object[] args, ref object result)
     {
         // try to find the handler registered for this method.
         // if there is no handler, run the original method.
-        if (!TryGetHandler(__originalMethod, out var handler)) return true;
+        if (!TryGetHandler(originalMethod, out var handler)) return true;
 
         // call the registered handler with the instance & arguments.
-        var result = InvokeSafely(handler!, __instance, __args, __originalMethod);
+        var hookResult = InvokeSafely(handler!, instance, args, originalMethod);
 
         // if SkipOriginal is true, use Value as the method's return value.
-        if (result.SkipOriginal) __result = result.Value!;
+        if (hookResult.SkipOriginal) result = hookResult.Value!;
 
         // true = run the original method.
         // false = skip the original method.
-        return !result.SkipOriginal;
+        return !hookResult.SkipOriginal;
     }
 
     // prefix for static methods that return a value.
-    private static bool GenericPrefixResultStatic(MethodBase __originalMethod, object[] __args, ref object __result)
+    private static bool GenericPrefixResultStatic(MethodBase originalMethod, object[] args, ref object result)
     {
         // try to find the handler registered for this method.
         // if there is no handler, run the original method.
-        if (!TryGetHandler(__originalMethod, out var handler)) return true;
+        if (!TryGetHandler(originalMethod, out var handler)) return true;
 
         // static methods have no instance, so pass null.
-        var result = InvokeSafely(handler!, null, __args, __originalMethod);
+        var hookResult = InvokeSafely(handler!, null, args, originalMethod);
 
         // if SkipOriginal is true, use Value as the method's return value.
-        if (result.SkipOriginal) __result = result.Value!;
+        if (hookResult.SkipOriginal) result = hookResult.Value!;
 
         // true = run the original method.
         // false = skip the original method.
-        return !result.SkipOriginal;
+        return !hookResult.SkipOriginal;
     }
 
     // finds the handler registered for the original method.
@@ -449,16 +453,16 @@ public static class GodotBridgePatch
 
         Log($"complete: {totalPatched} patched across {BridgeTypeNames.Length} types, {totalFailed} failed.");
     }
-    private static void BridgePrefix(MethodBase __originalMethod, object[] __args, object __instance)
+    private static void BridgePrefix(MethodBase originalMethod, object[] args, object? instance)
     {
         if (StartupHook.DebugEnabled)
         {
             try
             {
-                string args = __args is { Length: > 0 }
-                    ? string.Join(", ", __args.Select(a => a?.ToString() ?? "null"))
+                string callingArgs = args is { Length: > 0 }
+                    ? string.Join(", ", args.Select(a => a.ToString() ?? "null"))
                     : "";
-                Log($"-> {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}({args})");
+                Log($"-> {originalMethod.DeclaringType?.Name}.{originalMethod.Name}({callingArgs})");
             }
             catch (Exception e)
             {
@@ -468,8 +472,8 @@ public static class GodotBridgePatch
 
         try
         {
-            if (__instance != null)
-                OnBridgeInstanceSeen?.Invoke(__instance);
+            if (instance != null)
+                OnBridgeInstanceSeen?.Invoke(instance);
         }
         catch (Exception e)
         {
@@ -477,14 +481,14 @@ public static class GodotBridgePatch
         }
     }
 
-    private static void BridgePostfix(MethodBase __originalMethod, object __result)
+    private static void BridgePostfix(MethodBase originalMethod, object result)
     {
         if (!StartupHook.DebugEnabled) return;
 
         try
         {
-            string result = __result?.ToString() ?? "void";
-            Log($"<- {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name} returned {result}");
+            string returnResult = result.ToString() ?? "void";
+            Log($"<- {originalMethod.DeclaringType?.Name}.{originalMethod.Name} returned {returnResult}");
         }
         catch (Exception e)
         {
