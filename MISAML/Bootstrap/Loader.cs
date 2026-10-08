@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -63,7 +64,7 @@ public static class Loader
     
     private static void Log(string message)
     {
-        var line = $"{_stopwatch.Elapsed.TotalSeconds:F6} [MISAML.Bootstrap] {message}";
+        var line = $"{Stopwatch.Elapsed.TotalSeconds:F6} [MISAML.Bootstrap] {message}";
         File.AppendAllText(LogPath, line + "\n");
     }
 
@@ -135,17 +136,17 @@ public static class Loader
 
             var isolatedPayload = isolatedContext.LoadFromAssemblyPath(payloadPath);
 
-            var APIHostType = isolatedPayload.GetType("MISAML.GodotAPI.GodotAPIHost")
+            var apiHostType = isolatedPayload.GetType("MISAML.GodotAPI.GodotAPIHost")
                 ?? throw new Exception("GodotAPIHost type not found in MISAML.GodotAPI.GodotAPIHost");
 
-            var initMethod = APIHostType.GetMethod("Initialize", BindingFlags.Public | BindingFlags.Static)
+            var initMethod = apiHostType.GetMethod("Initialize", BindingFlags.Public | BindingFlags.Static)
                 ?? throw new Exception("GodotAPIHost.Initialize not found");
 
             initMethod.Invoke(null, null);
 
             // cache the relay target once so every future firing can call .Invoke
             // on the same MethodInfo
-            _relayMethod = APIHostType.GetMethod("OnInstanceRelayed", BindingFlags.Public | BindingFlags.Static)
+            _relayMethod = apiHostType.GetMethod("OnInstanceRelayed", BindingFlags.Public | BindingFlags.Static)
                 ?? throw new Exception("GodotAPIHost.OnInstanceRelayed not found");
             
             Log("isolated context GodotAPIHost ready!");
@@ -173,5 +174,5 @@ public static class Loader
         }
     }
 
-    private static readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    private static readonly Stopwatch Stopwatch = Stopwatch.StartNew();
 }
