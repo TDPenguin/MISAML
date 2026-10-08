@@ -37,63 +37,65 @@ internal static class Log
 internal static class Search
 {
 
-    // How the bridge list below was found:
-    //
-    // This is worth repeating after every game update, since class and method
-    // names can change between builds.
-    //
-    // 1. Decompiled Mnemonimov.dll with ilspycmd:
-    //
-    //      ilspycmd Mnemonimov.dll -o decompiled_mnemonimov -p
-    //
-    //    Mnemonimov.dll is located in data_Mnemonimov_linuxbsd_x86_64/, next to
-    //    the game executable.
-    //
-    // 2. Searched the decompiled C# source for every class that Godot exposes
-    //    as a scriptable bridge:
-    //
-    //      grep -rl "GlobalClass" decompiled_mnemonimov/
-    //
-    // 3. Cross-reference this by searching for classes that inherit
-    //    directly from Godot base types. This catches bridge classes even if they
-    //    don't use the [GlobalClass] attribute:
-    //
-    //      grep -rln ": RefCounted\|: Node\|: Resource\|: GodotObject\|: Control" decompiled_mnemonimov/
-    //
-    // 4. Checked the actual namespace of every bridge class with:
-    //
-    //      grep -n "^namespace" <each file>
-    //
-    //    DO NOT assume that the namespace matches the directory structure as it often
-    //    does not.
-    //
-    // As of the build this was last checked against, all 5 bridge classes are
-    //    in the same namespace:
-    //
-    //      Mnemonimov.src.asm
-    //
-    // This is true regardless of which directory their individual .cs files
-    // are located in.
-    //
-    // These are Godot's own interop override methods, these take Godot's 
-    // internal by reference types (godot_string_name, godot_variant, etc.) and 
-    // will throw InvalidProgramException when Harmony tries to rewrite them.
-    //
-    // We skip anything matching these method names.
-    //
-    // How these were identified:
-    //
-    // Check every method in each bridge class's decompiled source and
-    // looked for methods marked "protected override" or "internal static"
-    // whose signatures contain godot_string_name, godot_variant, or
-    // NativeVariantPtrArgs. These consistently correspond to Godot's
-    // compiler generated interop code rather than real game logic.
-    //
-    // "InvokeGodotClassStaticMethod" is the same kind of Godot interop
-    // method, but it only appears on classes that expose static bridge
-    // methods (AssemblerRunner and CsUtils). It is internal, so the
-    // BindingFlags filter already excludes it. The entry is kept
-    // anyway to pick up potential false positives.
+    /*
+     How the bridge list below was found:
+    
+     This is worth repeating after every game update, since class and method
+     names can change between builds.
+    
+     1. Decompiled Mnemonimov.dll with ilspycmd:
+    
+          ilspycmd Mnemonimov.dll -o decompiled_mnemonimov -p
+    
+        Mnemonimov.dll is located in data_Mnemonimov_linuxbsd_x86_64/, next to
+        the game executable.
+    
+     2. Searched the decompiled C# source for every class that Godot exposes
+        as a scriptable bridge:
+    
+          grep -rl "GlobalClass" decompiled_mnemonimov/
+    
+     3. Cross-reference this by searching for classes that inherit
+        directly from Godot base types. This catches bridge classes even if they
+        don't use the [GlobalClass] attribute:
+    
+          grep -rln ": RefCounted\|: Node\|: Resource\|: GodotObject\|: Control" decompiled_mnemonimov/
+    
+     4. Checked the actual namespace of every bridge class with:
+    
+          grep -n "^namespace" <each file>
+    
+        DO NOT assume that the namespace matches the directory structure as it often
+        does not.
+    
+     As of the build this was last checked against, all 5 bridge classes are
+        in the same namespace:
+    
+          Mnemonimov.src.asm
+    
+     This is true regardless of which directory their individual .cs files
+     are located in.
+    
+     These are Godot's own interop override methods, these take Godot's 
+     internal by reference types (godot_string_name, godot_variant, etc.) and 
+     will throw InvalidProgramException when Harmony tries to rewrite them.
+    
+     We skip anything matching these method names.
+    
+     How these were identified:
+    
+     Check every method in each bridge class's decompiled source and
+     looked for methods marked "protected override" or "internal static"
+     whose signatures contain godot_string_name, godot_variant, or
+     NativeVariantPtrArgs. These consistently correspond to Godot's
+     compiler generated interop code rather than real game logic.
+    
+     "InvokeGodotClassStaticMethod" is the same kind of Godot interop
+     method, but it only appears on classes that expose static bridge
+     methods (AssemblerRunner and CsUtils). It is internal, so the
+     BindingFlags filter already excludes it. The entry is kept
+     anyway to pick up potential false positives.
+    */
     private static readonly HashSet<string> SkipNames =
     [
         "InvokeGodotClassMethod",
