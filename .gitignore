@@ -19,6 +19,8 @@ target/
 **.gdc
 **/[Nn]otes/
 godot-*/
+**/vendor/
+test.md
 
 # BYO GodotSharp.dll, please! (it's in the game directory, too)
 MISAML.Core/vendor/GodotSharp.dll 
