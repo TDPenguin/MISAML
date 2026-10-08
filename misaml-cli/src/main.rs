@@ -68,7 +68,7 @@ fn cmd_launch() -> Result<()> {
         .context("could not find bundled .NET runtime")?;
 
     require_exists(&shim_path, "shim library")?;
-    require_exists(&payload_dir.join("MISAML.Core.dll"), "MISAML.Core.dll")?;
+    require_exists(&payload_dir.join("MISAML.dll"), "MISAML.dll")?;
 
     log!("Launching Mnemonimov with MISAML...");
     log!("  shim: {}", shim_path.display());

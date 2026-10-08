@@ -331,9 +331,9 @@ fn bootstrap_managed(host_handle: *mut c_void, domain_id: c_uint) -> bool {
         create_delegate(
             host_handle,
             domain_id,
-            c"MISAML.Core".as_ptr(),
-            c"MISAML.Core.StartupHook".as_ptr(),
-            c"Initialize".as_ptr(),
+            c"MISAML.Bootstrap".as_ptr(),
+            c"MISAML.Bootstrap.Loader".as_ptr(),
+            c"Handoff".as_ptr(),
             &mut delegate_ptr,
         )
     };
@@ -343,7 +343,7 @@ fn bootstrap_managed(host_handle: *mut c_void, domain_id: c_uint) -> bool {
         return false;
     }
 
-    debug_log!("calling MISAML.Core.StartupHook.Initialize()");
+    debug_log!("calling MISAML.Bootstrap.Entry.Handoff() in MISAML.dll");
 
     let bootstrap: BootstrapFn = unsafe { std::mem::transmute(delegate_ptr) };
     unsafe { bootstrap() };
