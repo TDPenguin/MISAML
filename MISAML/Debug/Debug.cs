@@ -117,14 +117,14 @@ internal static class Search
         }
         catch (ReflectionTypeLoadException e)
         {
-            /* we skip any null types!!! take them out of array! */
+            // we skip any null types!!! take them out of array!
             return e.Types.Where(t => t != null).ToArray()!;
         }
     }
 
     public static SearchResult Run(
         Harmony harmony, IEnumerable<Type?> types, string label
-        /* enumerable because it's an array! */
+        // enumerable because it's an array!
     )
     {
         // maybe can just be ToArray()!,.,,??? i think... eepy..

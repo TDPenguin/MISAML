@@ -1,9 +1,9 @@
 ﻿using System;
-using System.Configuration.Assemblies;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using MISAML.Core;
 
 namespace MISAML.Bootstrap;
 
@@ -153,7 +153,7 @@ public static class Loader
             // Setup the relay, every time a bridge method fires in the Default
             // context StartupHook/BridgePatch, hand the live instance across
             // to GodotAPIHost via the cached MethodInfo
-            MISAML.Core.GodotBridgePatch.OnBridgeInstanceSeen += RelayToIsolatedContext;
+            GodotBridgePatch.OnBridgeInstanceSeen += RelayToIsolatedContext;
         }
         catch (Exception e)
         {
