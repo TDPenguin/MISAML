@@ -1,58 +1,59 @@
 ﻿using System;
-using System.Configuration.Assemblies;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using MISAML.Core;
 
 namespace MISAML.Bootstrap;
 
-// WHY DOES THIS CLASS/ASSEMBLY EXIST?
-//
-// MISAML.dll gets loaded into the game's process by misaml-shim, via a raw
-// CoreCLR hosting call (coreclr_create_delegate). This always loads the
-// assembly in the ".NET Default" AssemblyLoadContext, giving our (MISAML's)
-// code and types their own "isolated" managed runtime context within the
-// game's process.
-//
-// Godot's own native bootstrap, seperately, loads Mnemonimov.dll, Asm.dll,
-// GodotSharp.dll, and other manage assemblies into a different "isolated" 
-// runtime context:
-// "Internal.Runtime.InteropServices.IsolatedComponentLoadContext".
-// This is separate from the ".NET Default" AssemblyLoadContext used by MISAML.
-//
-// This matters because as I painfully and tediously learnt through trial and
-// error... .NET treats a type (like Godot.GodotObject) as a genuinely
-// different type per room it's loaded into, even if it's the exact same file,
-// loaded twice.
-//
-// This was confirmed as two Assembly objects for the identical GodotSharp.dll 
-// file path failed ReferenceEquals (returned False). A plain
-// "is Godot.GodotObject" check, against a real, live game object, also
-// returned False, when checked using a GodotObject type resolved from this
-// (Default) context.
-//
-// tl;dr, the shim and Godot load assemblies into different closed rooms,
-// and sending messages between these rooms isn't exactly possible.
-//
-// Plain method calls on live objects still work fine from Default context, as 
-// they don't need two types to be "the same", just any real object. 
-// But anything concerning a type identity check (is/as/casts) against a live
-// Godot object do not and will not work reliably from Default context.
-//
-// THE FIX THIS CLASS IMPLEMENTS
-//
-// AssemblyLoadContext has a public method that allows us to load an assembly
-// into a specific "room", from ordinary C# code, no low-level stuff required.
-// So, once Mnenimov.dll, Asm.dll, GodotSharp.dll, etc. are confirmed loaded,
-// we just grab their room, and then load MISAML.dll into that room. This
-// is ONLY possible through C# code for some godforsaken reason.
-//
-// So this is essentially just bootstrap code, required for MISAML.dll to
-// resolve things properly while avoiding reflection, hopefully being more
-// straightforward to work with, as we can use native Godot API's.
-//
-// The bootstrap only does what is described above.
+/* WHY DOES THIS CLASS/ASSEMBLY EXIST?
+
+MISAML.dll gets loaded into the game's process by misaml-shim, via a raw
+CoreCLR hosting call (coreclr_create_delegate). This always loads the
+assembly in the ".NET Default" AssemblyLoadContext, giving our (MISAML's)
+code and types their own "isolated" managed runtime context within the
+game's process.
+
+Godot's own native bootstrap, seperately, loads Mnemonimov.dll, Asm.dll,
+GodotSharp.dll, and other manage assemblies into a different "isolated" 
+runtime context:
+"Internal.Runtime.InteropServices.IsolatedComponentLoadContext".
+This is separate from the ".NET Default" AssemblyLoadContext used by MISAML.
+
+This matters because as I painfully and tediously learnt through trial and
+error... .NET treats a type (like Godot.GodotObject) as a genuinely
+different type per room it's loaded into, even if it's the exact same file,
+loaded twice.
+
+This was confirmed as two Assembly objects for the identical GodotSharp.dll 
+file path failed ReferenceEquals (returned False). A plain
+"is Godot.GodotObject" check, against a real, live game object, also
+returned False, when checked using a GodotObject type resolved from this
+(Default) context.
+
+tl;dr, the shim and Godot load assemblies into different closed rooms,
+and sending messages between these rooms isn't exactly possible.
+
+Plain method calls on live objects still work fine from Default context, as 
+they don't need two types to be "the same", just any real object. 
+But anything concerning a type identity check (is/as/casts) against a live
+Godot object do not and will not work reliably from Default context.
+
+THE FIX THIS CLASS IMPLEMENTS
+
+AssemblyLoadContext has a public method that allows us to load an assembly
+into a specific "room", from ordinary C# code, no low-level stuff required.
+So, once Mnenimov.dll, Asm.dll, GodotSharp.dll, etc. are confirmed loaded,
+we just grab their room, and then load MISAML.dll into that room. This
+is ONLY possible through C# code for some godforsaken reason.
+
+So this is essentially just bootstrap code, required for MISAML.dll to
+resolve things properly while avoiding reflection, hopefully being more
+straightforward to work with, as we can use native Godot API's.
+
+The bootstrap only does what is described above. */
 
 public static class Loader
 {
@@ -60,10 +61,10 @@ public static class Loader
         Path.GetDirectoryName(typeof(Loader).Assembly.Location)!,
         "misaml.log"
     );
-    
+
     private static void Log(string message)
     {
-        var line = $"{_stopwatch.Elapsed.TotalSeconds:F6} [MISAML.Bootstrap] {message}";
+        var line = $"{Stopwatch.Elapsed.TotalSeconds:F6} [MISAML.Bootstrap] {message}";
         File.AppendAllText(LogPath, line + "\n");
     }
 
@@ -83,7 +84,7 @@ public static class Loader
         File.WriteAllText(LogPath, ""); // clear log
 
         Log("Starting, waiting for Mnemonimov...");
-    
+
         // run this function whenever a new assembly is loaded into the AppDomain
         //
         // add the function to the AssemblyLoad event so it runs automatically
@@ -135,25 +136,25 @@ public static class Loader
 
             var isolatedPayload = isolatedContext.LoadFromAssemblyPath(payloadPath);
 
-            var APIHostType = isolatedPayload.GetType("MISAML.GodotAPI.GodotAPIHost")
+            var apiHostType = isolatedPayload.GetType("MISAML.GodotAPI.GodotAPIHost")
                 ?? throw new Exception("GodotAPIHost type not found in MISAML.GodotAPI.GodotAPIHost");
 
-            var initMethod = APIHostType.GetMethod("Initialize", BindingFlags.Public | BindingFlags.Static)
+            var initMethod = apiHostType.GetMethod("Initialize", BindingFlags.Public | BindingFlags.Static)
                 ?? throw new Exception("GodotAPIHost.Initialize not found");
 
             initMethod.Invoke(null, null);
 
             // cache the relay target once so every future firing can call .Invoke
             // on the same MethodInfo
-            _relayMethod = APIHostType.GetMethod("OnInstanceRelayed", BindingFlags.Public | BindingFlags.Static)
+            _relayMethod = apiHostType.GetMethod("OnInstanceRelayed", BindingFlags.Public | BindingFlags.Static)
                 ?? throw new Exception("GodotAPIHost.OnInstanceRelayed not found");
-            
+
             Log("isolated context GodotAPIHost ready!");
 
             // Setup the relay, every time a bridge method fires in the Default
             // context StartupHook/BridgePatch, hand the live instance across
             // to GodotAPIHost via the cached MethodInfo
-            MISAML.Core.GodotBridgePatch.OnBridgeInstanceSeen += RelayToIsolatedContext;
+            GodotBridgePatch.OnBridgeInstanceSeen += RelayToIsolatedContext;
         }
         catch (Exception e)
         {
@@ -169,9 +170,9 @@ public static class Loader
         }
         catch (Exception e)
         {
-            Log("[MISAML.Bootstrap] relay invoke failed: " + e);   
+            Log("[MISAML.Bootstrap] relay invoke failed: " + e);
         }
     }
 
-    private static readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    private static readonly Stopwatch Stopwatch = Stopwatch.StartNew();
 }

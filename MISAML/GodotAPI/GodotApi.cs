@@ -8,7 +8,7 @@ namespace MISAML.GodotAPI;
 
 // Direct Godot API primitives, runs inside the isolated AssemblyLoadContext,
 // just a foundation for the API.
-public static class API
+public static class GodotApi
 {
     private static SceneTree? _sceneTree;
 
@@ -17,7 +17,7 @@ public static class API
     internal static void Bootstrap(GodotObject anyBridgeInstance)
     {
         if (_sceneTree != null) return; // only need to do this once, ever
- 
+
         try
         {
             _sceneTree = (SceneTree)Engine.GetMainLoop();
@@ -30,10 +30,10 @@ public static class API
         }
     }
 
-    private static void Log(string message) => Logger.Write(nameof(API), message);
+    private static void Log(string message) => Logger.Write(nameof(GodotApi), message);
 
     public static SceneTree SceneTree
-        => _sceneTree ?? throw new InvalidOperationException("GodotAPI is not bootstrapped!");
+        => _sceneTree ?? throw new InvalidOperationException("GodotApi is not bootstrapped!");
 
     public static Node Root => SceneTree.Root;
 
@@ -57,7 +57,7 @@ public static class API
             if (node.GetType().Name == typeName)
                 return node;
 
-            foreach (Node child in node.GetChildren()) 
+            foreach (Node child in node.GetChildren())
                 queue.Enqueue(child);
         }
 
@@ -67,43 +67,43 @@ public static class API
     // add more shit later
 
     public static Color MakeColor(string hex) => new(hex);
- 
+
     public static GodotObject Instantiate(string className)
     {
         var variant = ClassDB.Instantiate(className);
         return variant.AsGodotObject()
             ?? throw new Exception($"ClassDB.Instantiate({className}) returned null/non-object!");
     }
- 
+
     public static void Set<T>(GodotObject instance, string propertyName, T value) where T : notnull
         => instance.Set(propertyName, Variant.From(value));
- 
+
     public static Variant Get(GodotObject instance, string propertyName)
         => instance.Get(propertyName);
- 
+
     public static Variant Call(GodotObject instance, string methodName, params Variant[] args)
         => instance.Call(methodName, args);
- 
+
     public static void AddChildDeferred(Node parent, Node child)
         => parent.CallDeferred("add_child", child);
 }
 
 // What Loader talks to via reflection, just relays a live instance into
 // API.Bootstrap the first time one shows up.
-public static class GodotAPIHost
+public static class GodotApiHost
 {
-    public static void Initialize() => Logger.Write(nameof(GodotAPIHost), "Initialized, ready to receive relayed instances!");
+    public static void Initialize() => Logger.Write(nameof(GodotApiHost), "Initialized, ready to receive relayed instances!");
 
     public static void OnInstanceRelayed(object instance)
     {
         try
         {
-            if (instance is Godot.GodotObject godotObj)
-                API.Bootstrap(godotObj);
+            if (instance is GodotObject godotObj)
+                GodotApi.Bootstrap(godotObj);
         }
         catch (Exception e)
         {
-            Logger.Write(nameof(GodotAPIHost), "OnInstanceRelayed failed: " + e);
+            Logger.Write(nameof(GodotApiHost), "OnInstanceRelayed failed: " + e);
         }
     }
 }
@@ -114,12 +114,12 @@ internal static class Logger
         Path.GetDirectoryName(typeof(Logger).Assembly.Location)!,
         "misaml.log"
     );
- 
-    private static readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+
+    private static readonly Stopwatch Stopwatch = Stopwatch.StartNew();
 
     public static void Write(string @class, string message)
     {
-        var line = $"{_stopwatch.Elapsed.TotalSeconds:F6} [MISAML.GodotAPI.{@class}] {message}";
+        var line = $"{Stopwatch.Elapsed.TotalSeconds:F6} [MISAML.GodotApi.{@class}] {message}";
         File.AppendAllText(LogPath, line + "\n");
     }
 }

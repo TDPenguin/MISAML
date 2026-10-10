@@ -4,10 +4,9 @@ using System.IO;
 using System.Reflection;
 using System.Linq;
 using HarmonyLib;
-using System.ComponentModel;
-using System.Net;
 using System.Runtime.CompilerServices;
-using System.Reflection.Metadata;
+
+using MISAML.structs;
 
 namespace MISAML.Debug;
 
@@ -31,77 +30,71 @@ internal static class Log
     }
 }
 
-// struct for results of search, readonly means immutable, record means data focused!
-public readonly record struct SearchResult(
-    int TypesScanned, 
-    int Patchable, 
-    int Skipped, 
-    int Failed
-);
-
 // shared by bridge/asm/mnemonimov/godotsharp!!! the reflection + probe then unpatch
 // logic is here! each method is patched just long enough so harmony can see if it
 // can make IL for it! then we unpatch, just a one time discovery thingy!!
 internal static class Search
 {
 
-    // How the bridge list below was found:
-    //
-    // This is worth repeating after every game update, since class and method
-    // names can change between builds.
-    //
-    // 1. Decompiled Mnemonimov.dll with ilspycmd:
-    //
-    //      ilspycmd Mnemonimov.dll -o decompiled_mnemonimov -p
-    //
-    //    Mnemonimov.dll is located in data_Mnemonimov_linuxbsd_x86_64/, next to
-    //    the game executable.
-    //
-    // 2. Searched the decompiled C# source for every class that Godot exposes
-    //    as a scriptable bridge:
-    //
-    //      grep -rl "GlobalClass" decompiled_mnemonimov/
-    //
-    // 3. Cross-reference this by searching for classes that inherit
-    //    directly from Godot base types. This catches bridge classes even if they
-    //    don't use the [GlobalClass] attribute:
-    //
-    //      grep -rln ": RefCounted\|: Node\|: Resource\|: GodotObject\|: Control" decompiled_mnemonimov/
-    //
-    // 4. Checked the actual namespace of every bridge class with:
-    //
-    //      grep -n "^namespace" <each file>
-    //
-    //    DO NOT assume that the namespace matches the directory structure as it often
-    //    does not.
-    //
-    // As of the build this was last checked against, all 5 bridge classes are
-    //    in the same namespace:
-    //
-    //      Mnemonimov.src.asm
-    //
-    // This is true regardless of which directory their individual .cs files
-    // are located in.
-    //
-    // These are Godot's own interop override methods, these take Godot's 
-    // internal by reference types (godot_string_name, godot_variant, etc.) and 
-    // will throw InvalidProgramException when Harmony tries to rewrite them.
-    //
-    // We skip anything matching these method names.
-    //
-    // How these were identified:
-    //
-    // Check every method in each bridge class's decompiled source and
-    // looked for methods marked "protected override" or "internal static"
-    // whose signatures contain godot_string_name, godot_variant, or
-    // NativeVariantPtrArgs. These consistently correspond to Godot's
-    // compiler generated interop code rather than real game logic.
-    //
-    // "InvokeGodotClassStaticMethod" is the same kind of Godot interop
-    // method, but it only appears on classes that expose static bridge
-    // methods (AssemblerRunner and CsUtils). It is internal, so the
-    // BindingFlags filter already excludes it. The entry is kept
-    // anyway to pick up potential false positives.
+    /*
+     How the bridge list below was found:
+    
+     This is worth repeating after every game update, since class and method
+     names can change between builds.
+    
+     1. Decompiled Mnemonimov.dll with ilspycmd:
+    
+          ilspycmd Mnemonimov.dll -o decompiled_mnemonimov -p
+    
+        Mnemonimov.dll is located in data_Mnemonimov_linuxbsd_x86_64/, next to
+        the game executable.
+    
+     2. Searched the decompiled C# source for every class that Godot exposes
+        as a scriptable bridge:
+    
+          grep -rl "GlobalClass" decompiled_mnemonimov/
+    
+     3. Cross-reference this by searching for classes that inherit
+        directly from Godot base types. This catches bridge classes even if they
+        don't use the [GlobalClass] attribute:
+    
+          grep -rln ": RefCounted\|: Node\|: Resource\|: GodotObject\|: Control" decompiled_mnemonimov/
+    
+     4. Checked the actual namespace of every bridge class with:
+    
+          grep -n "^namespace" <each file>
+    
+        DO NOT assume that the namespace matches the directory structure as it often
+        does not.
+    
+     As of the build this was last checked against, all 5 bridge classes are
+        in the same namespace:
+    
+          Mnemonimov.src.asm
+    
+     This is true regardless of which directory their individual .cs files
+     are located in.
+    
+     These are Godot's own interop override methods, these take Godot's 
+     internal by reference types (godot_string_name, godot_variant, etc.) and 
+     will throw InvalidProgramException when Harmony tries to rewrite them.
+    
+     We skip anything matching these method names.
+    
+     How these were identified:
+    
+     Check every method in each bridge class's decompiled source and
+     looked for methods marked "protected override" or "internal static"
+     whose signatures contain godot_string_name, godot_variant, or
+     NativeVariantPtrArgs. These consistently correspond to Godot's
+     compiler generated interop code rather than real game logic.
+    
+     "InvokeGodotClassStaticMethod" is the same kind of Godot interop
+     method, but it only appears on classes that expose static bridge
+     methods (AssemblerRunner and CsUtils). It is internal, so the
+     BindingFlags filter already excludes it. The entry is kept
+     anyway to pick up potential false positives.
+    */
     private static readonly HashSet<string> SkipNames =
     [
         "InvokeGodotClassMethod",
@@ -123,14 +116,14 @@ internal static class Search
         }
         catch (ReflectionTypeLoadException e)
         {
-            /* we skip any null types!!! take them out of array! */
+            // we skip any null types!!! take them out of array!
             return e.Types.Where(t => t != null).ToArray()!;
         }
     }
 
     public static SearchResult Run(
         Harmony harmony, IEnumerable<Type?> types, string label
-        /* enumerable because it's an array! */
+    // enumerable because it's an array!
     )
     {
         // maybe can just be ToArray()!,.,,??? i think... eepy..
@@ -167,7 +160,13 @@ internal static class Search
 
         ProbeAll(harmony, AllMethods(), label, ref ok, ref skipped, ref failed);
 
-        return new SearchResult(typesScanned, ok, skipped, failed);
+        return new SearchResult
+        {
+            TypesScanned = typesScanned,
+            Patchable = ok,
+            Skipped = skipped,
+            Failed = failed
+        };
     }
 
     // same thing as Run(types), but for an exact, already known set
@@ -180,13 +179,19 @@ internal static class Search
 
         ProbeAll(harmony, methodList.Select(m => (m.DeclaringType!, m)), label, ref ok, ref skipped, ref failed);
 
-        return new SearchResult(methodList.Length, ok, skipped, failed);
+        return new SearchResult
+        {
+            TypesScanned = methodList.Length,
+            Patchable = ok,
+            Skipped = skipped,
+            Failed = failed
+        };
     }
 
     // the probe, patch, log, unpatched loop, shared by Run and RunMethods.
     private static void ProbeAll(
-        Harmony harmony, 
-        IEnumerable<(Type type, MethodInfo method)> methods, 
+        Harmony harmony,
+        IEnumerable<(Type type, MethodInfo method)> methods,
         string label,
         ref int ok,
         ref int skipped,
@@ -297,7 +302,7 @@ internal static class Search
         if (specialNameTag != null)
             tags.Add(specialNameTag);
 
-        if ((method.GetMethodImplementationFlags() & 
+        if ((method.GetMethodImplementationFlags() &
                 MethodImplAttributes.AggressiveInlining) != 0)
         {
             tags.Add("agressive-inlining");
@@ -305,7 +310,7 @@ internal static class Search
 
         var tagString = string.Join(",", tags);
 
-        var parameters = string.Join(", ", 
+        var parameters = string.Join(", ",
             method.GetParameters()
                 .Select(p => $"{p.ParameterType.Name} {p.Name}"));
 
@@ -382,82 +387,4 @@ public static class Mnemonimov
 {
     public static SearchResult Run(Harmony harmony, Assembly mneminomovAssembly)
         => Search.Run(harmony, Search.AllTypesOf(mneminomovAssembly, "Mnemonimov"), "Mnemonimov");
-}
-
-// Every type in GodotSharp.dll, public and private, it's the whole engine API,
-// not entirely needed and very large. Docs on this will be limited.
-public static class GodotSharp
-{
-    // Found via: monodis --output=X.il <dll>, then
-    //   rg -o '\[GodotSharp\][\w.]+::\w+' mnemonimov.il asm.il --no-filename | sort -u
-    // against the live Mnemonimov.dll/Asm.dll. Redo this after a game
-    // update, same idea as Bridge.TypeNames. 6 of the 26 raw matches
-    // are already in Search's SkipNames (Godot's own interop overrides,
-    // always InvalidProgramException) and are dropped from this list, however
-    // they can still be included.
-    private static readonly (string typeName, string methodName)[] UsedMethods =
-    [
-        ("Godot.Bridge.GodotSerializationInfo", "AddProperty"),
-        ("Godot.Bridge.GodotSerializationInfo", "TryGetProperty"),
-        ("Godot.Collections.Dictionary", "Add"),
-        ("Godot.GodotObject", "Dispose"),
-        ("Godot.Image", "CreateFromData"),
-        ("Godot.Image", "SetData"),
-        ("Godot.ImageTexture", "CreateFromImage"),
-        ("Godot.ImageTexture", "Update"),
-        ("Godot.NativeInterop.NativeVariantPtrArgs", "get_Count"),
-        ("Godot.NativeInterop.NativeVariantPtrArgs", "get_Item"),
-        ("Godot.NativeInterop.VariantUtils", "ConvertTo"),
-        ("Godot.NativeInterop.VariantUtils", "ConvertToDictionary"),
-        ("Godot.NativeInterop.VariantUtils", "CreateFrom"),
-        ("Godot.NativeInterop.VariantUtils", "CreateFromArray"),
-        ("Godot.NativeInterop.VariantUtils", "CreateFromDictionary"),
-        ("Godot.StringName", "op_Equality"),
-        ("Godot.StringName", "op_Implicit"),
-        ("Godot.Variant", "As"),
-        ("Godot.Variant", "From"),
-        ("Godot.Variant", "op_Implicit"),
-    ];
-
-    public static SearchResult Run(Harmony harmony, Assembly godotSharpAssembly)
-        => Search.RunMethods(harmony, ResolveMethods(godotSharpAssembly), "GodotSharp");
-
-    // multiple overloads can share a name, funcs with same name diff params...
-    // (e.g. VarianUtils.CreateFrom<T>), the IL match only gave the name,
-    // so resolve every overload instead of guessing which one
-    private static IEnumerable<MethodInfo> ResolveMethods(Assembly godotSharpAssembly)
-    {
-        // go through every type + method pair we want to find!!!
-        foreach (var (typeName, methodName) in UsedMethods)
-        {
-            var type = godotSharpAssembly.GetType(typeName);
-            if (type == null)
-            {
-                Log.Write($"SKIP|GodotSharp|{typeName}.{methodName}|type not found, game update likely renamed/removed it");
-                continue;
-            }
-
-            MethodInfo[] methods;
-            try
-            {
-                methods = type.GetMethods(
-                    BindingFlags.Public | BindingFlags.NonPublic |
-                    BindingFlags.Instance | BindingFlags.Static |
-                    BindingFlags.DeclaredOnly);
-            }
-            catch
-            {
-                continue;
-            }
-
-            // go through every method and only keep methods with the name we want!!!
-            foreach (var method in methods.Where(m => m.Name == methodName))
-                /* gives this method back to whoever called ResolveMethods() */
-                /* yield pauses here and continues from here when the next */
-                /* method is requested. it allows the function to produce */
-                /* multiple results, per each method. as we can find multiple */
-                /* matching methods per type. */
-                yield return method;
-        }
-    }
 }
