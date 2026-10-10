@@ -1,4 +1,8 @@
-use std::{fs::File, io::{Read, Seek, SeekFrom}, path::Path};
+use std::{
+    fs::File,
+    io::{Read, Seek, SeekFrom},
+    path::Path,
+};
 
 use aes::{Aes256, cipher::KeyIvInit};
 use md5::{Digest, Md5};
@@ -26,7 +30,7 @@ pub enum PckError {
     Io(#[from] std::io::Error),
 }
 
-// a known key pair for a specific game build if changed in a 
+// a known key pair for a specific game build if changed in a
 // future update, re-derive and add it here
 pub struct Profile {
     pub name: &'static str,
@@ -40,13 +44,11 @@ impl Profile {
     }
 }
 
-pub const KNOWN_PROFILES: &[Profile] = &[
-    Profile {
-        name: "mnemonimov-build-25044332", // linux public branch
-        base_key: hex32("4b90ae264d56f519eab29aff5f988024a08535eb4387954bf50a18e3e2e26a7e"),
-        xor_mask: hex32("3d6cd415efd72f73d718cf8b29c0c809987355acda9bc965586282bd0dccd058"),
-    },
-];
+pub const KNOWN_PROFILES: &[Profile] = &[Profile {
+    name: "mnemonimov-build-25044332", // linux public branch
+    base_key: hex32("4b90ae264d56f519eab29aff5f988024a08535eb4387954bf50a18e3e2e26a7e"),
+    xor_mask: hex32("3d6cd415efd72f73d718cf8b29c0c809987355acda9bc965586282bd0dccd058"),
+}];
 
 // const hex decoder for the hardcoded keys above
 const fn hex32(s: &str) -> [u8; 32] {
@@ -67,7 +69,7 @@ const fn hex_val(c: u8) -> u8 {
         b'0'..=b'9' => c - b'0',
         b'A'..=b'F' => c - b'A' + 10,
         b'a'..=b'f' => c - b'a' + 10,
-        _ => panic!("invalid hex digit in KNOWN_PROFILES")
+        _ => panic!("invalid hex digit in KNOWN_PROFILES"),
     }
 }
 
@@ -134,7 +136,7 @@ impl<'a> Reader<'a> {
 
 fn parse_header(data: &[u8]) -> Result<(PckHeader, usize), PckError> {
     let mut reader = Reader::new(data);
-    
+
     if reader.take(4)? != b"GDPC" {
         return Err(PckError::BadMagic);
     }
@@ -145,14 +147,14 @@ fn parse_header(data: &[u8]) -> Result<(PckHeader, usize), PckError> {
     let patch = reader.u32()?;
     let flags = reader.u32()?;
     let file_base = reader.u64()?;
-    
+
     let dir_offset = match format {
         3 => reader.u64()?,
         2 => {
             // 16 reserved u32 fields come before the file count
             reader.skip(16 * 4)?;
             reader.pos as u64
-        },
+        }
         other => return Err(PckError::UnsupportedFormat(other)),
     };
 
@@ -173,8 +175,7 @@ fn decrypt_dir(blob: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, PckError> {
 
     let stored_md5 = reader.bytes::<16>()?;
 
-    let plaintext_size =
-        usize::try_from(reader.u64()?).map_err(|_| PckError::Truncated)?;
+    let plaintext_size = usize::try_from(reader.u64()?).map_err(|_| PckError::Truncated)?;
 
     let iv = reader.bytes::<16>()?;
 
@@ -198,19 +199,15 @@ fn decrypt_dir(blob: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, PckError> {
     Ok(plaintext)
 }
 
-
 fn parse_entries(
     reader: &mut Reader<'_>,
     count: u32,
     file_base: u64,
 ) -> Result<Vec<PckEntry>, PckError> {
-    let mut entries = Vec::with_capacity(
-        usize::try_from(count).map_err(|_| PckError::Truncated)?,
-    );
+    let mut entries = Vec::with_capacity(usize::try_from(count).map_err(|_| PckError::Truncated)?);
 
     for _ in 0..count {
-        let path_len = usize::try_from(reader.u32()?)
-            .map_err(|_| PckError::Truncated)?;
+        let path_len = usize::try_from(reader.u32()?).map_err(|_| PckError::Truncated)?;
 
         let path = String::from_utf8_lossy(reader.take(path_len)?)
             .trim_end_matches('\0')
@@ -221,9 +218,7 @@ fn parse_entries(
         let md5 = reader.bytes::<16>()?;
         let flags = reader.u32()?;
 
-        let abs_off = file_base
-            .checked_add(offset)
-            .ok_or(PckError::Truncated)?;
+        let abs_off = file_base.checked_add(offset).ok_or(PckError::Truncated)?;
 
         entries.push(PckEntry {
             path,
@@ -236,7 +231,6 @@ fn parse_entries(
 
     Ok(entries)
 }
-
 
 /// Opens and fully parses a .pck file
 ///
@@ -264,9 +258,7 @@ pub fn open(path: impl AsRef<Path>) -> Result<Pck, PckError> {
 
     let Some((profile, dir)) = KNOWN_PROFILES.iter().find_map(|profile| {
         let key = profile.eff_key();
-        decrypt_dir(rest, &key)
-            .ok()
-            .map(|dir| (profile, dir))
+        decrypt_dir(rest, &key).ok().map(|dir| (profile, dir))
     }) else {
         return Err(PckError::NoMatchingProfile);
     };
@@ -286,21 +278,14 @@ pub fn open(path: impl AsRef<Path>) -> Result<Pck, PckError> {
 /// Encrypted entries use the same format as the directory:
 /// MD5 + size + IV + ciphertext.
 /// Plain entries are read as-is.
-pub fn extract(
-    pck_path: &Path,
-    entry: &PckEntry,
-    key: &[u8; 32],
-) -> Result<Vec<u8>, PckError> {
+pub fn extract(pck_path: &Path, entry: &PckEntry, key: &[u8; 32]) -> Result<Vec<u8>, PckError> {
     let mut file = File::open(pck_path)?;
     file.seek(SeekFrom::Start(entry.abs_off))?;
 
-    let size = usize::try_from(entry.size)
-        .map_err(|_| PckError::Truncated)?;
+    let size = usize::try_from(entry.size).map_err(|_| PckError::Truncated)?;
 
     if entry.flags & 1 != 0 {
-        let read_len = size
-            .checked_add(64)
-            .ok_or(PckError::Truncated)?;
+        let read_len = size.checked_add(64).ok_or(PckError::Truncated)?;
 
         let mut blob = vec![0; read_len];
         file.read_exact(&mut blob)?;

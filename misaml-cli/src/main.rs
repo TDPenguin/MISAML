@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 
 const MNEMONIMOV_APP_ID: u32 = 3854110;
 const BUILD_ID: &str = env!("CARGO_PKG_VERSION");
@@ -49,23 +49,22 @@ fn main() -> Result<()> {
 }
 
 fn cmd_launch() -> Result<()> {
-    let game_dir = find_game_dir()
-        .context("could not find Mnemonimov, is it installed via Steam?")?;
+    let game_dir =
+        find_game_dir().context("could not find Mnemonimov, is it installed via Steam?")?;
 
     log!("Found Mnemonimov at: {}", game_dir.display());
 
     let exe_path = game_dir.join(platform::GAME_EXE);
     require_exists(&exe_path, platform::GAME_EXE)?;
 
-    let misaml_dir = own_install_dir()
-        .context("could not find misaml-cli directory")?;
+    let misaml_dir = own_install_dir().context("could not find misaml-cli directory")?;
     let payload_dir = misaml_dir.join("MISAML");
 
     ensure_runtime(&payload_dir)?;
 
     let shim_path = payload_dir.join(platform::SHIM_NAME);
-    let framework_dir = find_framework_dir(&payload_dir)
-        .context("could not find bundled .NET runtime")?;
+    let framework_dir =
+        find_framework_dir(&payload_dir).context("could not find bundled .NET runtime")?;
 
     require_exists(&shim_path, "shim library")?;
     require_exists(&payload_dir.join("MISAML.dll"), "MISAML.dll")?;
@@ -82,15 +81,11 @@ fn cmd_launch() -> Result<()> {
         .env("MISAML_FRAMEWORK_DIR", &framework_dir)
         .exec();
 
-    Err(anyhow!(err).context(format!(
-        "failed to launch {}", 
-        exe_path.display()
-    )))
+    Err(anyhow!(err).context(format!("failed to launch {}", exe_path.display())))
 }
 
 fn find_game_dir() -> Result<PathBuf> {
-    let steam = steamlocate::SteamDir::locate()
-        .context("could not locate Steam")?;
+    let steam = steamlocate::SteamDir::locate().context("could not locate Steam")?;
 
     let Some((app, library)) = steam.find_app(MNEMONIMOV_APP_ID)? else {
         bail!("Mnemonimov (app id {MNEMONIMOV_APP_ID}) is not installed!");
@@ -152,10 +147,7 @@ fn cmd_inspect_pck(path: Option<&String>) -> Result<()> {
     for entry in &pck.entries {
         println!(
             "{:#010x} {:8} flags={:#x} {}",
-            entry.abs_off,
-            entry.size,
-            entry.flags,
-            entry.path,
+            entry.abs_off, entry.size, entry.flags, entry.path,
         );
     }
 
@@ -167,9 +159,7 @@ fn cmd_extract_pck(path: Option<&String>, out_dir: Option<&String>) -> Result<()
         bail!("usage: misaml-cli extract-pck <path-to.pck> [out_dir]");
     };
 
-    let out_dir = PathBuf::from(
-        out_dir.map(String::as_str).unwrap_or("extracted")
-    );
+    let out_dir = PathBuf::from(out_dir.map(String::as_str).unwrap_or("extracted"));
 
     let pck = misaml_pck::open(path)?;
     let key = pck
@@ -179,7 +169,7 @@ fn cmd_extract_pck(path: Option<&String>, out_dir: Option<&String>) -> Result<()
 
     let mut ok = 0;
     let mut failed = 0;
-    
+
     for entry in &pck.entries {
         let out_path = out_dir.join(&entry.path);
 
@@ -212,13 +202,12 @@ fn ensure_runtime(payload_dir: &Path) -> Result<()> {
     if marker.is_dir() {
         debug_log!("Runtime {RUNTIME_VERSION} already present!");
         return Ok(());
-    }  
+    }
 
     log!("Runtime {RUNTIME_VERSION} not found, downloading...");
 
     let runtime_dir = payload_dir.join("runtime");
-    std::fs::create_dir_all(&runtime_dir)
-        .context("could not create runtime directory")?;
+    std::fs::create_dir_all(&runtime_dir).context("could not create runtime directory")?;
 
     let url = format!(
         "https://builds.dotnet.microsoft.com/dotnet/Runtime/{RUNTIME_VERSION}/dotnet-runtime-{RUNTIME_VERSION}-{}",
@@ -230,7 +219,7 @@ fn ensure_runtime(payload_dir: &Path) -> Result<()> {
     let mut response = ureq::get(&url)
         .call()
         .with_context(|| format!("failed to download .NET runtime from {url}"))?;
-    
+
     extract_runtime_archive(response.body_mut().as_reader(), &runtime_dir)?;
 
     if !marker.is_dir() {

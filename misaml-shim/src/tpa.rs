@@ -1,13 +1,15 @@
 // TPA (trusted platform assemblies) list rewriting
 
-use std::{collections::HashSet, ffi::OsString, path::{Path, PathBuf}};
-
-
+use std::{
+    collections::HashSet,
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 // one DLL to make available through TPA
 #[derive(Debug, Clone)]
 pub struct Assembly {
-    pub path: PathBuf
+    pub path: PathBuf,
 }
 
 impl Assembly {
@@ -29,11 +31,7 @@ impl Assembly {
 // - final order: surviving original entries, then framework, then payload
 //   (MISAML's own dlls), game's real assemblies first, then whatever
 //   we're replacing/adding
-pub fn build_tpa(
-    original: &str,
-    framework: &[Assembly],
-    payload: &[Assembly],
-) -> String {
+pub fn build_tpa(original: &str, framework: &[Assembly], payload: &[Assembly]) -> String {
     let framework: Vec<&Assembly> = framework
         .iter()
         .filter(|a| {
@@ -43,10 +41,8 @@ pub fn build_tpa(
         // more framework filters can go here
         .collect();
 
-    let framework_names: HashSet<OsString> = framework
-        .iter()
-        .filter_map(|a| a.file_name_os())
-        .collect();
+    let framework_names: HashSet<OsString> =
+        framework.iter().filter_map(|a| a.file_name_os()).collect();
 
     let mut seen: HashSet<OsString> = HashSet::new();
     let mut entries: Vec<String> = Vec::new();
@@ -70,7 +66,9 @@ pub fn build_tpa(
     }
 
     for asm in framework.iter().copied().chain(payload.iter()) {
-        if let Some(name) = asm.file_name_os() && !seen.insert(name) {
+        if let Some(name) = asm.file_name_os()
+            && !seen.insert(name)
+        {
             continue;
         }
 
@@ -79,4 +77,3 @@ pub fn build_tpa(
 
     entries.join(":")
 }
-

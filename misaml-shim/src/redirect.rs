@@ -7,8 +7,13 @@
 // 2. its filename is one we're actually replacing
 // 3. the replacement file exists
 
-use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::{Path, PathBuf}, sync::OnceLock};
-use std::ffi::{c_char, CStr, CString, OsString};
+use std::ffi::{CStr, CString, OsString, c_char};
+use std::{
+    ffi::OsStr,
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use crate::ffi::Open64Fn;
 
@@ -41,7 +46,10 @@ fn redirects() -> &'static std::collections::HashMap<OsString, PathBuf> {
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
 
-            if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("dll")) {
+            if !path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
+            {
                 continue;
             }
 
@@ -72,11 +80,7 @@ fn redirect_target(requested: &Path) -> Option<PathBuf> {
 }
 
 // only ever call this as the installed open64 hook, not directly
-pub unsafe fn hook(
-    pathname: *const c_char,
-    flags: libc::c_int,
-    real: Open64Fn
-) -> libc::c_int {
+pub unsafe fn hook(pathname: *const c_char, flags: libc::c_int, real: Open64Fn) -> libc::c_int {
     if pathname.is_null() || GAME_RUNTIME_DIR.get().is_none() {
         return unsafe { call_real(real, pathname, flags) };
     }
@@ -109,20 +113,10 @@ pub unsafe fn hook(
 
 // O_CREAT adds a variadic mode arg that Open64Fn can't represent
 // safely in Rust, so we use the raw syscall here like the original
-unsafe fn call_real(
-    real: Open64Fn,
-    pathname: *const c_char,
-    flags: libc::c_int,
-) -> libc::c_int {
+unsafe fn call_real(real: Open64Fn, pathname: *const c_char, flags: libc::c_int) -> libc::c_int {
     if flags & libc::O_CREAT != 0 {
         return unsafe {
-            libc::syscall(
-                libc::SYS_openat,
-                libc::AT_FDCWD,
-                pathname,
-                flags,
-                0o666,
-            ) as libc::c_int
+            libc::syscall(libc::SYS_openat, libc::AT_FDCWD, pathname, flags, 0o666) as libc::c_int
         };
     }
 
