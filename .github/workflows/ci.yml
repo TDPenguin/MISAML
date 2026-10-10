@@ -1,0 +1,59 @@
+name: ci-rust-and-csharp
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+concurrency:
+  group: ci-${{github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-rust:
+    name: Build Rust
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+        continue-on-error: true
+      #Ideally this wouldn't be here, but I really don't wanna spend time fixing stinky rust
+
+      - name: Build
+        run: cargo build --release --locked
+  
+  build-csharp:
+    name: Build C#
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore MISAML.slnx
+
+      - name: Check formatting
+        run: dotnet format MISAML.slnx --verify-no-changes --severity warn --no-restore
+
+      - name: Build
+        run: dotnet build MISAML.slnx --no-restore --configuration Release -warnaserror
